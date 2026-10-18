@@ -1,0 +1,26 @@
+name: CI
+
+# Chequeo rápido en cada push y pull request: que el código compile y no tenga
+# errores evidentes (nombres no definidos, imports rotos, etc.).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Compile
+        run: python -m py_compile story_maker.pyw
+      - name: Lint (ruff, errors only)
+        run: |
+          python -m pip install --upgrade ruff
+          ruff check --select E9,F story_maker.pyw

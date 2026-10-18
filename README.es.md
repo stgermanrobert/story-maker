@@ -19,7 +19,7 @@ Story Maker es una app de escritorio para Windows hecha en Python (Tkinter) sobr
 - Opacidad sobre un color a elección.
 
 **Video principal**
-- Se arrastra sobre la preview para moverlo; esquinas o rueda del mouse para escalar; doble clic lo centra (con guías magnéticas al centro).
+- Clic sobre la preview para seleccionarlo; después se arrastra para moverlo, esquinas o rueda del mouse para escalar, doble clic lo centra (con guías magnéticas). Clic afuera o `Esc` oculta el recuadro para ver la preview limpia.
 - Recorte propio (izquierda / derecha / arriba / abajo).
 - Opacidad, esquinas redondeadas, borde con color, sombra.
 - Recorte de barras negras incrustadas en la fuente.
@@ -58,6 +58,12 @@ Story Maker es una app de escritorio para Windows hecha en Python (Tkinter) sobr
 
 ### Opción A — Versión portable (recomendada)
 Descargá el último `StoryMaker-vX.Y.Z-win64.zip` desde [Releases](../../releases), descomprimilo donde quieras y abrí `StoryMaker.exe`. Trae FFmpeg y yt-dlp incluidos; no hay que instalar nada más.
+
+Para verificar la descarga, compará su hash con `SHA256SUMS.txt` de la misma release:
+
+```powershell
+Get-FileHash .\StoryMaker-vX.Y.Z-win64.zip -Algorithm SHA256
+```
 
 > Windows SmartScreen puede avisar que la app no está firmada: **Más información → Ejecutar de todos modos**.
 

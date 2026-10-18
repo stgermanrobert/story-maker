@@ -4,7 +4,7 @@ The source code in this repository is MIT-licensed. The **portable release** (`S
 
 | Component | Used for | License | Source |
 |---|---|---|---|
-| FFmpeg (`ffmpeg.exe`, `ffprobe.exe`, `ffplay.exe`) — "essentials" build by Gyan Doshi | All video/audio processing, preview and playback | GPLv3 | https://ffmpeg.org · builds: https://www.gyan.dev/ffmpeg/builds/ |
+| FFmpeg (`ffmpeg.exe`, `ffprobe.exe`) — "essentials" build by Gyan Doshi | All video/audio processing, preview and playback | GPLv3 | https://ffmpeg.org · builds: https://www.gyan.dev/ffmpeg/builds/ |
 | yt-dlp (`yt-dlp.exe`) | YouTube downloads | Unlicense | https://github.com/yt-dlp/yt-dlp |
 | Python + Tkinter (bundled by PyInstaller) | Runtime and user interface | PSF License / Tcl-Tk license | https://www.python.org · https://www.tcl.tk |
 | PyInstaller bootloader | Packaging the executable | GPLv2 with bootloader exception | https://pyinstaller.org |

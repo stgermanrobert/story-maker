@@ -19,7 +19,7 @@ Story Maker is a small desktop app for Windows built with Python (Tkinter) on to
 - Opacity over a solid color of your choice.
 
 **Main video**
-- Drag it on the preview to move it; drag a corner or use the mouse wheel to scale; double-click to center (with magnetic center guides).
+- Click it on the preview to select it, then drag to move, drag a corner or use the mouse wheel to scale, double-click to center (with magnetic center guides). Click elsewhere or press `Esc` to hide the frame and see a clean preview.
 - Independent crop (left / right / top / bottom).
 - Opacity, rounded corners, border with color, drop shadow.
 - Crop black bars baked into the source.
@@ -59,6 +59,12 @@ Story Maker is a small desktop app for Windows built with Python (Tkinter) on to
 ### Option A — Portable build (recommended)
 Download the latest `StoryMaker-vX.Y.Z-win64.zip` from [Releases](../../releases), unzip it anywhere and run `StoryMaker.exe`. FFmpeg and yt-dlp are included; nothing else to install.
 
+To verify the download, compare its hash with `SHA256SUMS.txt` from the same release:
+
+```powershell
+Get-FileHash .\StoryMaker-vX.Y.Z-win64.zip -Algorithm SHA256
+```
+
 > Windows SmartScreen may warn about an unsigned app: click **More info → Run anyway**.
 
 ### Option B — Run from source
@@ -81,7 +87,7 @@ Everything is rendered by FFmpeg with a single `filter_complex`: the source is s
 
 ## Building the portable release
 
-Releases are built automatically by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)): publish a release on GitHub with a `vX.Y.Z` tag and the workflow builds the portable zip on Windows, attaches it to the release and fills in the notes from `CHANGELOG.md`.
+Releases are built automatically by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)): publish a release on GitHub with a `vX.Y.Z` tag (it must match `APP_VERSION` in `story_maker.pyw`) and the workflow builds the portable zip on Windows with a pinned FFmpeg version, attaches it to the release with its SHA-256 checksum and fills in the notes from `CHANGELOG.md`.
 
 ## License
 

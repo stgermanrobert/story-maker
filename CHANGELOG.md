@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.5] - 2026-10-18
+### Changed
+- Clean preview: the frame around the main video is hidden by default. Hovering shows a thin outline; clicking the video selects it (handles appear); clicking anywhere else or pressing `Esc` hides it again. The mouse wheel only scales the video when hovering or selected.
+- Portable build no longer bundles `ffplay.exe` (not used on Windows): the zip is 38.7 MiB smaller.
+- Release builds use a pinned FFmpeg version (9.0.2) for reproducible builds, check that the tag matches `APP_VERSION`, and publish a `SHA256SUMS.txt` next to the zip.
+- GitHub Actions updated to their Node 24 majors; Dependabot keeps them up to date.
+
+### Added
+- CI workflow: compile check and lint on every push.
+
 ## [1.0.4] - 2026-10-18
 ### Added
 - Move the whole fragment: drag the purple bar above the waveform (or `Ctrl`+drag inside the selection) to slide in and out together, keeping the exact length. Either edge snaps to the playhead and to the start/end of the video; the view auto-scrolls when zoomed in.

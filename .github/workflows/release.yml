@@ -1,7 +1,7 @@
 name: Build portable release
 
 # Se ejecuta al publicar una release en GitHub (Releases → Draft a new release → tag vX.Y.Z → Publish):
-# compila el zip portable, lo adjunta a esa release y completa las notas desde el CHANGELOG.
+# compila el zip portable, lo adjunta a esa release junto con su SHA-256 y completa las notas desde el CHANGELOG.
 # También se puede lanzar a mano desde la pestaña Actions (deja el zip como artifact).
 on:
   release:
@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # Versión fija de FFmpeg para que cada build sea reproducible (se actualiza a mano).
+  FFMPEG_VERSION: "9.0.2"
+  PYTHON_VERSION: "3.12"
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -18,11 +23,20 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - name: Check that the tag matches APP_VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          $m = Select-String -Path story_maker.pyw -Pattern '^APP_VERSION = "([^"]+)"'
+          $app = $m.Matches[0].Groups[1].Value
+          if ($tag -ne $app) { Write-Error "El tag v$tag no coincide con APP_VERSION = $app en story_maker.pyw"; exit 1 }
+          Write-Host "Versión OK: $app"
+
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
@@ -30,19 +44,21 @@ jobs:
       - name: Build app (one folder, no console)
         run: pyinstaller --noconfirm --onedir --windowed --name StoryMaker story_maker.pyw
 
-      - name: Bundle FFmpeg (essentials build)
+      - name: Bundle FFmpeg (essentials build, pinned)
         run: |
-          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          $v = $env:FFMPEG_VERSION
+          Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/$v/ffmpeg-$v-essentials_build.zip" -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
           $root = Get-ChildItem ffmpeg_tmp -Directory | Select-Object -First 1
           New-Item -ItemType Directory dist/StoryMaker/bin, dist/StoryMaker/licenses -Force | Out-Null
-          Copy-Item "$($root.FullName)/bin/*.exe" dist/StoryMaker/bin/
+          # Solo ffmpeg y ffprobe: en Windows el audio de la vista previa no usa ffplay
+          Copy-Item "$($root.FullName)/bin/ffmpeg.exe", "$($root.FullName)/bin/ffprobe.exe" dist/StoryMaker/bin/
           Get-ChildItem $root.FullName -Filter "LICENSE*" | ForEach-Object {
             Copy-Item $_.FullName "dist/StoryMaker/licenses/FFmpeg-$($_.Name).txt"
           }
           Write-Host "FFmpeg build: $($root.Name)"
 
-      - name: Bundle yt-dlp
+      - name: Bundle yt-dlp (latest on purpose: YouTube changes often)
         run: |
           Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile dist/StoryMaker/bin/yt-dlp.exe
           Invoke-WebRequest https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/LICENSE -OutFile dist/StoryMaker/licenses/yt-dlp-LICENSE.txt
@@ -58,19 +74,22 @@ jobs:
           dist/StoryMaker/bin/ffprobe.exe -hide_banner -version | Select-Object -First 1
           dist/StoryMaker/bin/yt-dlp.exe --version
 
-      - name: Zip
+      - name: Zip and checksum
         id: zip
         run: |
           $name = "StoryMaker-${{ github.ref_name }}-win64.zip" -replace '/', '-'
           Compress-Archive -Path dist/StoryMaker -DestinationPath $name -CompressionLevel Optimal
+          $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name" | Set-Content SHA256SUMS.txt -Encoding ascii -NoNewline
           "name=$name" >> $env:GITHUB_OUTPUT
           # Tamaños reales, para el registro
           $app = (Get-ChildItem dist/StoryMaker -Recurse -File | Where-Object { $_.DirectoryName -notlike '*\bin' } | Measure-Object Length -Sum).Sum
           $bin = (Get-ChildItem dist/StoryMaker/bin -File | Measure-Object Length -Sum).Sum
           $zip = (Get-Item $name).Length
-          Write-Host ("App (Python + Tk + código): {0:N1} MB" -f ($app / 1MB))
-          Write-Host ("bin (FFmpeg + yt-dlp):      {0:N1} MB" -f ($bin / 1MB))
-          Write-Host ("Zip final:                  {0:N1} MB" -f ($zip / 1MB))
+          Write-Host ("App (Python + Tk + código): {0:N1} MiB" -f ($app / 1MB))
+          Write-Host ("bin (FFmpeg + yt-dlp):      {0:N1} MiB" -f ($bin / 1MB))
+          Write-Host ("Zip final:                  {0:N1} MiB" -f ($zip / 1MB))
+          Write-Host "SHA-256: $hash"
 
       - name: Release notes from CHANGELOG
         if: startsWith(github.ref, 'refs/tags/')
@@ -79,21 +98,26 @@ jobs:
           $text = Get-Content CHANGELOG.md -Raw
           $m = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($ver))\][^\n]*\n(.*?)(?=^## \[|\z)")
           $body = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "Story Maker $ver" }
-          $body += "`n`n---`n**Download:** ``StoryMaker-${{ github.ref_name }}-win64.zip`` → unzip → run ``StoryMaker.exe``. FFmpeg and yt-dlp included."
+          $body += "`n`n---`n**Download:** ``StoryMaker-${{ github.ref_name }}-win64.zip`` → unzip → run ``StoryMaker.exe``. FFmpeg $env:FFMPEG_VERSION and yt-dlp included."
+          $body += "`n`nSHA-256: ``$((Get-Content SHA256SUMS.txt).Split(' ')[0])``"
           Set-Content notes.md $body -Encoding utf8
 
-      - name: Attach zip and notes to the release
+      - name: Attach zip, checksum and notes to the release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Story Maker ${{ github.ref_name }}
           body_path: notes.md
-          files: ${{ steps.zip.outputs.name }}
+          files: |
+            ${{ steps.zip.outputs.name }}
+            SHA256SUMS.txt
 
       - name: Upload artifact (manual runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: StoryMaker-win64
-          path: ${{ steps.zip.outputs.name }}
+          path: |
+            ${{ steps.zip.outputs.name }}
+            SHA256SUMS.txt

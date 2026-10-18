@@ -23,7 +23,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
 
 APP_NAME = "Story Maker"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 SNAP_DURATIONS = (15, 30, 60)   # duraciones "imán" en segundos
 SNAP_PX = 9                      # radio del imán en píxeles (con zoom se vuelve más fino)
 ALT_MASK = 0x20000 if os.name == "nt" else 0x0008
@@ -615,6 +615,8 @@ class StoryMaker:
         self.wav_path = None
         self.play = {}
         self.edit = None
+        self.fg_selected = False   # recuadro con manijas visible (se edita el video principal)
+        self.fg_hover = False      # mouse encima del video principal (contorno suave)
 
         self._style()
         self._build_ui()
@@ -693,10 +695,11 @@ class StoryMaker:
         self.canvas.pack()
         self._resize_canvas()
         self._canvas_msg("Cargá un video o pegá un link de YouTube")
-        ttk.Label(left, text="Arrastrá el video para moverlo. Esquinas o rueda del mouse para escalar. "
-                             "Doble clic lo centra.", style="DimBg.TLabel", justify="left",
+        ttk.Label(left, text="Clic en el video para editarlo: arrastrar = mover, esquinas o rueda = escalar, "
+                             "doble clic = centrar. Clic afuera o Esc oculta el recuadro.", style="DimBg.TLabel", justify="left",
                   wraplength=int(self.canvas["width"])).pack(anchor="w", pady=(6, 0))
         self.canvas.bind("<Motion>", self._cv_hover)
+        self.canvas.bind("<Leave>", self._cv_leave)
         self.canvas.bind("<ButtonPress-1>", self._cv_press)
         self.canvas.bind("<B1-Motion>", self._cv_motion)
         self.canvas.bind("<ButtonRelease-1>", self._cv_release)
@@ -1049,10 +1052,12 @@ class StoryMaker:
         r.bind_all("<End>", guard(lambda e: self._go_block_end()))
         r.bind_all("<Control-Home>", guard(lambda e: self._go_video_start()))
         r.bind_all("<Control-End>", guard(lambda e: self._go_video_end()))
-        r.bind_all("<Escape>", guard(lambda e: self._stop_button()))
+        r.bind_all("<Escape>", guard(lambda e: self._escape()))
 
     def _defocus(self, e):
         w = e.widget
+        if w is not self.canvas and not isinstance(w, str):
+            self._set_selected(False)
         if isinstance(w, str) or isinstance(w, (tk.Entry, ttk.Entry, ttk.Combobox)):
             return
         try:
@@ -1148,6 +1153,7 @@ class StoryMaker:
             messagebox.showerror(APP_NAME, f"No pude leer el video:\n{e}")
             return
         self._stop_play()
+        self.fg_selected = self.fg_hover = False
         self.video, self.info = path, info
         self.lbl_video.configure(text=self._short(path.name))
         self.lbl_file.configure(text=f"{info['width']}x{info['height']} · {info['fps']:.2f} fps · "
@@ -1261,6 +1267,13 @@ class StoryMaker:
         tl = self.timeline
         if self.info:
             self._seek(max(tl.t_in, tl.t_out - 1.0 / (self.info["fps"] or 30)))
+
+    def _escape(self):
+        """Esc: si el video principal está seleccionado, lo deselecciona; si no, hace Stop."""
+        if self.fg_selected:
+            self._set_selected(False)
+        else:
+            self._stop_button()
 
     def _stop_button(self):
         """1er clic: detiene y vuelve al inicio del bloque. Si ya está ahí: al inicio del video."""
@@ -1377,9 +1390,15 @@ class StoryMaker:
         cv.delete("ov")
         if not self.video:
             return
+        if not (self.fg_selected or self.fg_hover):
+            return          # preview limpia: no se dibuja nada encima
         G = self._geom()
         x0, y0, x1, y1 = G["x"], G["y"], G["x"] + G["gw"], G["y"] + G["gh"]
         col = self.c["accent2"]
+        if not self.fg_selected:
+            # solo el contorno, para mostrar que se puede agarrar
+            cv.create_rectangle(x0, y0, x1, y1, outline=col, width=1, dash=(2, 4), tags="ov")
+            return
         cv.create_rectangle(x0, y0, x1, y1, outline="#000000", width=3, tags="ov")
         cv.create_rectangle(x0, y0, x1, y1, outline=col, width=1, dash=(5, 3), tags="ov")
         for hx, hy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
@@ -1396,7 +1415,8 @@ class StoryMaker:
             return None
         G = self._geom()
         x0, y0, x1, y1 = G["x"], G["y"], G["x"] + G["gw"], G["y"] + G["gh"]
-        for name, hx, hy in (("nw", x0, y0), ("ne", x1, y0), ("sw", x0, y1), ("se", x1, y1)):
+        corners = (("nw", x0, y0), ("ne", x1, y0), ("sw", x0, y1), ("se", x1, y1)) if self.fg_selected else ()
+        for name, hx, hy in corners:
             if abs(x - hx) <= 9 and abs(y - hy) <= 9:
                 return name
         if x0 <= x <= x1 and y0 <= y <= y1:
@@ -1407,12 +1427,28 @@ class StoryMaker:
         hit = self._cv_hit(e.x, e.y)
         cur = {"move": "fleur", None: ""}.get(hit, "sizing")
         self.canvas.configure(cursor=cur)
+        hover = hit is not None
+        if hover != self.fg_hover:
+            self.fg_hover = hover
+            self._draw_overlay()
+
+    def _cv_leave(self, e=None):
+        if self.fg_hover and not self.edit:
+            self.fg_hover = False
+            self._draw_overlay()
+
+    def _set_selected(self, sel):
+        if sel != self.fg_selected:
+            self.fg_selected = sel
+            self._draw_overlay()
 
     def _cv_press(self, e):
         hit = self._cv_hit(e.x, e.y)
         if not hit:
             self.edit = None
+            self._set_selected(False)   # clic afuera del video: se oculta el recuadro
             return
+        self._set_selected(True)
         G = self._geom()
         self.edit = dict(mode="move" if hit == "move" else "resize", corner=hit, mx=e.x, my=e.y, G=G,
                          ox=self.vars["fg_offset_x"].get(), oy=self.vars["fg_offset_y"].get())
@@ -1467,7 +1503,7 @@ class StoryMaker:
             self._changed()
 
     def _cv_wheel(self, direction):
-        if not self.video:
+        if not self.video or not (self.fg_hover or self.fg_selected):
             return
         w = self.vars["fg_width"].get()
         self._set_var("fg_width", min(250, max(20, w + 2 * direction)))
