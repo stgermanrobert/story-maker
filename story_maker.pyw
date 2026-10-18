@@ -23,10 +23,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
 
 APP_NAME = "Story Maker"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 SNAP_DURATIONS = (15, 30, 60)   # duraciones "imán" en segundos
 SNAP_PX = 9                      # radio del imán en píxeles (con zoom se vuelve más fino)
 ALT_MASK = 0x20000 if os.name == "nt" else 0x0008
+CTRL_MASK = 0x0004
 IS_WIN = os.name == "nt"
 NO_WINDOW = 0x08000000 if IS_WIN else 0
 CONFIG_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "StoryMaker"
@@ -258,13 +259,47 @@ def build_filter(s, src_w, src_h, k=1.0, fps=None, out_fmt="yuv420p"):
     return ";".join(g)
 
 
+# ---------------------------------------------------------------- tooltip
+class Tooltip:
+    """Globo de ayuda al dejar el mouse quieto sobre un widget."""
+    def __init__(self, widget, text, delay=450):
+        self.w, self.text, self.delay = widget, text, delay
+        self.tip = self.job = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, e=None):
+        self._hide()
+        self.job = self.w.after(self.delay, self._show)
+
+    def _show(self):
+        x = self.w.winfo_rootx() + 4
+        y = self.w.winfo_rooty() + self.w.winfo_height() + 4
+        self.tip = tk.Toplevel(self.w)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.tip, text=self.text, justify="left", bg="#2a2a37", fg="#e8e8f0",
+                 relief="solid", bd=1, padx=6, pady=3).pack()
+
+    def _hide(self, e=None):
+        if self.job:
+            self.w.after_cancel(self.job)
+            self.job = None
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
 # ---------------------------------------------------------------- línea de tiempo
 class Timeline(tk.Canvas):
     PAD = 14
     RULER = 20
+    BAR_TOP = 23      # barra del bloque (se arrastra para mover entrada+salida juntas)
+    BAR_H = 14
     STEPS = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]
 
-    def __init__(self, master, app, colors, height=104):
+    def __init__(self, master, app, colors, height=122):
         super().__init__(master, height=height, bg=colors["panel"], highlightthickness=0, cursor="hand2")
         self.app, self.c = app, colors
         self.dur = 0.0
@@ -274,6 +309,8 @@ class Timeline(tk.Canvas):
         self.wave_key = None
         self.drag = None
         self.snap_hit = None     # (tiempo, etiqueta) cuando el imán engancha
+        self.block = None        # estado mientras se arrastra el bloque
+        self.hover_bar = False
         self.bind("<Configure>", lambda e: (self.redraw(), app._request_wave()))
         self.bind("<ButtonPress-1>", self._press)
         self.bind("<B1-Motion>", self._motion)
@@ -298,7 +335,12 @@ class Timeline(tk.Canvas):
 
     def wave_area(self):
         h = self.winfo_height()
-        return self.RULER + 4, max(10, h - self.RULER - 8)
+        top = self.BAR_TOP + self.BAR_H + 4
+        return top, max(10, h - top - 6)
+
+    def x2t_free(self, x):
+        """Como x2t pero sin limitar al rango del video (para arrastres suaves)."""
+        return self.v0 + (x - self.PAD) / self.wpx() * (self.v1 - self.v0)
 
     def view_key(self):
         return (round(self.v0, 3), round(self.v1, 3), self.wpx(), self.wave_area()[1])
@@ -355,12 +397,22 @@ class Timeline(tk.Canvas):
             self.create_rectangle(self.PAD, top - 2, min(xi, w - self.PAD), top + wh + 2, **dim)
         if xo < w - self.PAD:
             self.create_rectangle(max(xo, self.PAD), top - 2, w - self.PAD, top + wh + 2, **dim)
-        self.create_rectangle(max(xi, self.PAD), top - 4, min(xo, w - self.PAD), top - 1,
-                              fill=c["accent"], outline="")
+        bx0, bx1 = max(xi, self.PAD), min(xo, w - self.PAD)
+        if bx1 > bx0:
+            active = self.drag == "block" or self.hover_bar
+            self.create_rectangle(bx0, self.BAR_TOP, bx1, self.BAR_TOP + self.BAR_H,
+                                  fill=c["accent2"] if active else c["accent"], outline="")
+            if bx1 - bx0 > 120:
+                self.create_text((bx0 + bx1) / 2, self.BAR_TOP + self.BAR_H / 2,
+                                 text=f"◀  {fmt_ms(self.t_out - self.t_in)}  ▶", fill="#ffffff",
+                                 font=(self.app.font[0], 8, "bold"))
+            elif bx1 - bx0 > 24:
+                self.create_text((bx0 + bx1) / 2, self.BAR_TOP + self.BAR_H / 2, text="◀▶",
+                                 fill="#ffffff", font=(self.app.font[0], 7))
         for x, col, side in ((xi, c["in"], 1), (xo, c["out"], -1)):
             if self.PAD - 8 <= x <= w - self.PAD + 8:
-                self.create_line(x, top - 4, x, top + wh + 2, fill=col, width=2)
-                self.create_polygon(x, top - 4, x + 9 * side, top - 4, x, top + 7, fill=col, outline="")
+                self.create_line(x, self.BAR_TOP, x, top + wh + 2, fill=col, width=2)
+                self.create_polygon(x, top - 2, x + 9 * side, top - 2, x, top + 9, fill=col, outline="")
                 self.create_polygon(x, top + wh + 2, x + 9 * side, top + wh + 2, x, top + wh - 9,
                                     fill=col, outline="")
         # guías del imán mientras se arrastra entrada/salida
@@ -392,24 +444,40 @@ class Timeline(tk.Canvas):
             self.create_rectangle(a, h - 3, b, h, fill=c["border"], outline="")
 
     # interacción
-    def _hit(self, x):
+    def _in_bar(self, y):
+        return self.BAR_TOP - 2 <= y <= self.BAR_TOP + self.BAR_H + 2
+
+    def _hit(self, x, y=0, state=0):
         xi, xo = self.t2x(self.t_in), self.t2x(self.t_out)
         di, do = abs(x - xi), abs(x - xo)
         if min(di, do) <= 7:
             if di < do or (di == do and x < xi):
                 return "in"
             return "out"
+        if xi < x < xo and (self._in_bar(y) or state & CTRL_MASK):
+            return "block"
         return "ph"
 
     def _hover(self, e):
-        if self.dur:
-            self.configure(cursor="sb_h_double_arrow" if self._hit(e.x) != "ph" else "hand2")
+        if not self.dur:
+            return
+        hit = self._hit(e.x, e.y, e.state)
+        self.configure(cursor={"in": "sb_h_double_arrow", "out": "sb_h_double_arrow",
+                               "block": "fleur"}.get(hit, "hand2"))
+        hb = hit == "block"
+        if hb != self.hover_bar:
+            self.hover_bar = hb
+            self.redraw()
 
     def _press(self, e):
         if not self.dur:
             return
-        self.drag = self._hit(e.x)
+        self.drag = self._hit(e.x, e.y, e.state)
         self.app._tl_press(self.drag)
+        if self.drag == "block":
+            self.block = dict(grab=self.x2t_free(e.x) - self.t_in, length=self.t_out - self.t_in)
+            self.redraw()
+            return
         self._motion(e)
 
     def snap_targets(self, kind):
@@ -440,8 +508,44 @@ class Timeline(tk.Canvas):
             return best[1]
         return t
 
+    def _snap_block(self, new_in, length, state):
+        """Imán para el bloque: cualquiera de sus bordes se pega al cursor, al inicio o al final."""
+        self.snap_hit = None
+        if not self.app.vars["snap"].get() or (state & ALT_MASK):
+            return new_in
+        targets = [(self.ph, "cursor"), (0.0, "inicio"), (self.dur, "final")]
+        best = None
+        for edge in (0.0, length):
+            ex = self.t2x(new_in + edge)
+            for tt, lab in targets:
+                d = abs(self.t2x(tt) - ex)
+                if d <= SNAP_PX and (best is None or d < best[0]):
+                    best = (d, tt - edge, tt, lab)
+        if best:
+            self.snap_hit = (best[2], best[3])
+            return best[1]
+        return new_in
+
     def _motion(self, e):
         if not self.drag:
+            return
+        if self.drag == "block":
+            b = self.block
+            new_in = self.x2t_free(e.x) - b["grab"]
+            new_in = self._snap_block(new_in, b["length"], e.state)
+            new_in = min(max(0.0, new_in), self.dur - b["length"])
+            self.app._move_block(new_in, b["length"])
+            # auto-desplazamiento si el bloque se acerca al borde con zoom
+            span = self.v1 - self.v0
+            if span < self.dur - 1e-6:
+                if e.x > self.winfo_width() - self.PAD and self.v1 < self.dur:
+                    self.v0 = min(self.dur - span, self.v0 + span * 0.02)
+                    self.v1 = self.v0 + span
+                    self.app._request_wave()
+                elif e.x < self.PAD and self.v0 > 0:
+                    self.v0 = max(0.0, self.v0 - span * 0.02)
+                    self.v1 = self.v0 + span
+                    self.app._request_wave()
             return
         t = self._snap(self.drag, self.x2t(e.x), e.state)
         if self.drag == "in":
@@ -455,6 +559,7 @@ class Timeline(tk.Canvas):
         if self.drag:
             d, self.drag = self.drag, None
             self.snap_hit = None
+            self.block = None
             self.redraw()
             self.app._tl_release(d)
 
@@ -616,9 +721,9 @@ class StoryMaker:
         self._build_transport(tlbox)
         self.timeline = Timeline(tlbox, self, self.c)
         self.timeline.pack(fill="x", pady=(8, 0))
-        ttk.Label(tlbox, text="Arrastrá los marcadores verde (entrada) y rojo (salida) · rueda = zoom · "
-                              "Shift+rueda = desplazar · doble clic = ver todo · Espacio = play · I / O = marcar · "
-                              "← → = frame (Shift = 1 s) · imán: 15/30/60 s y cursor (Alt al arrastrar = sin imán)", style="Dim.TLabel").pack(anchor="w", pady=(4, 0))
+        ttk.Label(tlbox, text="Marcadores verde / rojo = entrada / salida · barra violeta (o Ctrl+arrastrar) = mover el bloque · "
+                              "rueda = zoom · Shift+rueda = desplazar · doble clic = ver todo · I / O = marcar · "
+                              "Alt al arrastrar = sin imán", style="Dim.TLabel").pack(anchor="w", pady=(4, 0))
 
         # Exportar
         bottom = ttk.Frame(outer)
@@ -637,15 +742,21 @@ class StoryMaker:
     def _build_transport(self, p):
         row = ttk.Frame(p, style="Panel.TFrame")
         row.pack(fill="x")
-        b = lambda text, cmd, w=None: ttk.Button(row, text=text, style="Tool.TButton", command=cmd, width=w)
-        b("⇤", lambda: self._seek(self.timeline.t_in), 3).pack(side="left")
-        b("−1 s", lambda: self._step(-1.0), 5).pack(side="left", padx=(4, 0))
-        b("−1 f", lambda: self._step_frames(-1), 5).pack(side="left", padx=(4, 0))
-        self.btn_play = ttk.Button(row, text="▶  Play", style="Play.TButton", command=self._toggle_play, width=9)
-        self.btn_play.pack(side="left", padx=6)
-        b("+1 f", lambda: self._step_frames(1), 5).pack(side="left")
-        b("+1 s", lambda: self._step(1.0), 5).pack(side="left", padx=(4, 0))
-        b("⇥", lambda: self._seek(max(self.timeline.t_in, self.timeline.t_out - 0.001)), 3).pack(side="left", padx=(4, 0))
+        def b(text, cmd, tip, w=None, padx=(4, 0), style="Tool.TButton"):
+            btn = ttk.Button(row, text=text, style=style, command=cmd, width=w)
+            btn.pack(side="left", padx=padx)
+            Tooltip(btn, tip)
+            return btn
+        b("|◀", self._go_video_start, "Inicio del video  (Ctrl+Inicio)", 4, padx=(0, 0))
+        b("[◀", self._go_block_start, "Inicio del bloque  (Inicio)", 4)
+        b("−1 s", lambda: self._step(-1.0), "Retroceder 1 segundo  (Shift+←)", 5)
+        b("−1 f", lambda: self._step_frames(-1), "Frame anterior  (←)", 5)
+        b("■", self._stop_button, "Stop: vuelve al inicio del bloque.\nOtra vez: al inicio del video.  (Esc)", 3, padx=(10, 0))
+        self.btn_play = b("▶  Play", self._toggle_play, "Play / pausa  (Espacio)", 9, padx=(4, 10), style="Play.TButton")
+        b("+1 f", lambda: self._step_frames(1), "Frame siguiente  (→)", 5, padx=(0, 0))
+        b("+1 s", lambda: self._step(1.0), "Avanzar 1 segundo  (Shift+→)", 5)
+        b("▶]", self._go_block_end, "Fin del bloque  (Fin)", 4)
+        b("▶|", self._go_video_end, "Fin del video  (Ctrl+Fin)", 4)
         self.lbl_time = ttk.Label(row, text="0:00.000", style="Time.TLabel", width=10)
         self.lbl_time.pack(side="left", padx=(14, 0))
         self.vars["loop"] = tk.BooleanVar(value=self.settings["loop"])
@@ -934,8 +1045,11 @@ class StoryMaker:
         r.bind_all("<Right>", guard(lambda e: self._step_frames(1)))
         r.bind_all("<Shift-Left>", guard(lambda e: self._step(-1.0)))
         r.bind_all("<Shift-Right>", guard(lambda e: self._step(1.0)))
-        r.bind_all("<Home>", guard(lambda e: self._seek(self.timeline.t_in)))
-        r.bind_all("<End>", guard(lambda e: self._seek(self.timeline.t_out)))
+        r.bind_all("<Home>", guard(lambda e: self._go_block_start()))
+        r.bind_all("<End>", guard(lambda e: self._go_block_end()))
+        r.bind_all("<Control-Home>", guard(lambda e: self._go_video_start()))
+        r.bind_all("<Control-End>", guard(lambda e: self._go_video_end()))
+        r.bind_all("<Escape>", guard(lambda e: self._stop_button()))
 
     def _defocus(self, e):
         w = e.widget
@@ -1132,13 +1246,53 @@ class StoryMaker:
         if self.info:
             self._step(n / (self.info["fps"] or 30))
 
+    # navegación
+    def _go_video_start(self):
+        self._seek(0.0)
+
+    def _go_video_end(self):
+        if self.info:
+            self._seek(max(0.0, self.timeline.dur - 1.0 / (self.info["fps"] or 30)))
+
+    def _go_block_start(self):
+        self._seek(self.timeline.t_in)
+
+    def _go_block_end(self):
+        tl = self.timeline
+        if self.info:
+            self._seek(max(tl.t_in, tl.t_out - 1.0 / (self.info["fps"] or 30)))
+
+    def _stop_button(self):
+        """1er clic: detiene y vuelve al inicio del bloque. Si ya está ahí: al inicio del video."""
+        tl = self.timeline
+        if not tl.dur:
+            return
+        if self.playing:
+            self._stop_play()
+            self._seek(tl.t_in)
+        elif abs(tl.ph - tl.t_in) > 1e-3:
+            self._seek(tl.t_in)
+        else:
+            self._seek(0.0)
+
+    def _move_block(self, new_in, length):
+        tl = self.timeline
+        tl.t_in = new_in
+        tl.t_out = new_in + length
+        self._update_marks()
+
     def _tl_press(self, kind):
         self._was_playing = self.playing
         if self.playing and kind == "ph":
             self._stop_play()
 
     def _tl_release(self, kind):
-        if kind == "ph" and getattr(self, "_was_playing", False):
+        if kind == "block":
+            if self.playing:
+                self._start_playback(self.timeline.t_in)
+            else:
+                self._seek(self.timeline.t_in)
+        elif kind == "ph" and getattr(self, "_was_playing", False):
             self._start_playback(self.timeline.ph)
         elif kind in ("in", "out") and not self.playing:
             self._seek(self.timeline.t_in if kind == "in" else max(self.timeline.t_in, self.timeline.t_out - 0.04))

@@ -28,7 +28,9 @@ Story Maker is a small desktop app for Windows built with Python (Tkinter) on to
 - Play / pause with audio, showing the final composition.
 - Timeline with audio waveform, zoom and pan.
 - In / out markers you can drag, set at the playhead (`I` / `O`) or type with millisecond precision (`1:21.200`).
+- Drag the purple bar above the waveform (or `Ctrl`+drag inside the selection) to move the whole fragment while keeping its length.
 - Magnetic snapping to 15 s, 30 s and 60 s lengths and to the playhead (hold `Alt` to drag freely, or turn the magnet off).
+- Transport: video start, block start, stop (press twice to go back to the start of the video), play, block end, video end.
 - One-click 15 s / 30 s / 60 s fragments, loop playback, frame stepping.
 
 **Export**
@@ -45,9 +47,12 @@ Story Maker is a small desktop app for Windows built with Python (Tkinter) on to
 | `I` / `O` | Set in / out at the playhead |
 | `←` / `→` | Previous / next frame |
 | `Shift` + `←` / `→` | −1 s / +1 s |
-| `Home` / `End` | Go to in / out |
+| `Esc` | Stop (twice = back to the start of the video) |
+| `Home` / `End` | Go to block start / end |
+| `Ctrl` + `Home` / `End` | Go to video start / end |
 | Mouse wheel on timeline | Zoom (`Shift` + wheel = pan, double-click = show all) |
-| `Alt` while dragging a marker | Disable snapping |
+| Drag the purple bar / `Ctrl` + drag in the selection | Move the whole fragment |
+| `Alt` while dragging | Disable snapping |
 
 ## Installation
 
@@ -79,8 +84,8 @@ Everything is rendered by FFmpeg with a single `filter_complex`: the source is s
 Releases are built automatically by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) when a version tag is pushed:
 
 ```powershell
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 ## License

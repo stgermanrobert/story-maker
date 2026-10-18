@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-10-18
+### Added
+- Move the whole fragment: drag the purple bar above the waveform (or `Ctrl`+drag inside the selection) to slide in and out together, keeping the exact length. Either edge snaps to the playhead and to the start/end of the video; the view auto-scrolls when zoomed in.
+- Full transport: go to video start / block start, stop, play, block end / video end, with tooltips showing their shortcuts.
+- Stop button: the first press stops and returns to the block start; pressing it again goes to the start of the video (`Esc`).
+- Shortcuts: `Ctrl+Home` / `Ctrl+End` for the start / end of the video.
+
+### Changed
+- `Home` / `End` now go to the start / last frame of the block.
+
 ## [1.0.3] - 2026-10-18
 ### Added
 - Magnetic snapping on the timeline: in/out markers snap to 15 s, 30 s and 60 s lengths and to the playhead; the playhead snaps to in/out. Snap radius is measured in pixels, so zooming in makes it finer.

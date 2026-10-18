@@ -28,7 +28,9 @@ Story Maker es una app de escritorio para Windows hecha en Python (Tkinter) sobr
 - Play / pausa con audio, mostrando la composición final.
 - Línea de tiempo con forma de onda, zoom y desplazamiento.
 - Marcadores de entrada y salida: se arrastran, se marcan en el cursor (`I` / `O`) o se escriben con milisegundos (`1:21.200`).
+- Arrastrando la barra violeta sobre la onda (o `Ctrl`+arrastrar dentro de la selección) se mueve el fragmento entero sin cambiar su duración.
 - Imán a duraciones de 15, 30 y 60 s y al cursor (`Alt` para arrastrar libre, o se apaga el imán).
+- Transporte: inicio del video, inicio del bloque, stop (dos veces = vuelve al inicio del video), play, fin del bloque, fin del video.
 - Botones de fragmento de 15 / 30 / 60 s, loop y avance cuadro por cuadro.
 
 **Exportación**
@@ -45,9 +47,12 @@ Story Maker es una app de escritorio para Windows hecha en Python (Tkinter) sobr
 | `I` / `O` | Marcar entrada / salida en el cursor |
 | `←` / `→` | Frame anterior / siguiente |
 | `Shift` + `←` / `→` | −1 s / +1 s |
-| `Inicio` / `Fin` | Ir a la entrada / salida |
+| `Esc` | Stop (dos veces = inicio del video) |
+| `Inicio` / `Fin` | Ir al inicio / fin del bloque |
+| `Ctrl` + `Inicio` / `Fin` | Ir al inicio / fin del video |
 | Rueda sobre la línea de tiempo | Zoom (`Shift` + rueda = desplazar, doble clic = ver todo) |
-| `Alt` al arrastrar un marcador | Sin imán |
+| Arrastrar la barra violeta / `Ctrl` + arrastrar en la selección | Mover el fragmento entero |
+| `Alt` al arrastrar | Sin imán |
 
 ## Instalación
 
