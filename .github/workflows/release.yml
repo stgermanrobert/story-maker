@@ -1,0 +1,97 @@
+name: Build portable release
+
+# Se ejecuta al subir un tag de versión (git tag v1.0.3 && git push origin v1.0.3)
+# o a mano desde la pestaña Actions (en ese caso deja el zip como artifact, sin publicar release).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build app (one folder, no console)
+        run: pyinstaller --noconfirm --onedir --windowed --name StoryMaker story_maker.pyw
+
+      - name: Bundle FFmpeg (essentials build)
+        run: |
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
+          $root = Get-ChildItem ffmpeg_tmp -Directory | Select-Object -First 1
+          New-Item -ItemType Directory dist/StoryMaker/bin, dist/StoryMaker/licenses -Force | Out-Null
+          Copy-Item "$($root.FullName)/bin/*.exe" dist/StoryMaker/bin/
+          Get-ChildItem $root.FullName -Filter "LICENSE*" | ForEach-Object {
+            Copy-Item $_.FullName "dist/StoryMaker/licenses/FFmpeg-$($_.Name).txt"
+          }
+          Write-Host "FFmpeg build: $($root.Name)"
+
+      - name: Bundle yt-dlp
+        run: |
+          Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile dist/StoryMaker/bin/yt-dlp.exe
+          Invoke-WebRequest https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/LICENSE -OutFile dist/StoryMaker/licenses/yt-dlp-LICENSE.txt
+
+      - name: Add docs and licenses
+        run: |
+          Copy-Item LICENSE dist/StoryMaker/licenses/StoryMaker-LICENSE.txt
+          Copy-Item THIRD_PARTY_NOTICES.md, README.md, README.es.md, CHANGELOG.md dist/StoryMaker/
+
+      - name: Smoke test bundled binaries
+        run: |
+          dist/StoryMaker/bin/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          dist/StoryMaker/bin/ffprobe.exe -hide_banner -version | Select-Object -First 1
+          dist/StoryMaker/bin/yt-dlp.exe --version
+
+      - name: Zip
+        id: zip
+        run: |
+          $name = "StoryMaker-${{ github.ref_name }}-win64.zip" -replace '/', '-'
+          Compress-Archive -Path dist/StoryMaker -DestinationPath $name -CompressionLevel Optimal
+          "name=$name" >> $env:GITHUB_OUTPUT
+          # Tamaños reales, para el registro
+          $app = (Get-ChildItem dist/StoryMaker -Recurse -File | Where-Object { $_.DirectoryName -notlike '*\bin' } | Measure-Object Length -Sum).Sum
+          $bin = (Get-ChildItem dist/StoryMaker/bin -File | Measure-Object Length -Sum).Sum
+          $zip = (Get-Item $name).Length
+          Write-Host ("App (Python + Tk + código): {0:N1} MB" -f ($app / 1MB))
+          Write-Host ("bin (FFmpeg + yt-dlp):      {0:N1} MB" -f ($bin / 1MB))
+          Write-Host ("Zip final:                  {0:N1} MB" -f ($zip / 1MB))
+
+      - name: Release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($ver))\][^\n]*\n(.*?)(?=^## \[|\z)")
+          $body = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "Story Maker $ver" }
+          $body += "`n`n---`n**Download:** ``StoryMaker-${{ github.ref_name }}-win64.zip`` → unzip → run ``StoryMaker.exe``. FFmpeg and yt-dlp included."
+          Set-Content notes.md $body -Encoding utf8
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Story Maker ${{ github.ref_name }}
+          body_path: notes.md
+          files: ${{ steps.zip.outputs.name }}
+
+      - name: Upload artifact (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: StoryMaker-win64
+          path: ${{ steps.zip.outputs.name }}

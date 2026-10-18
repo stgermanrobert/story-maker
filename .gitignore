@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.spec
+build/
+dist/
+.venv/
+venv/
+
+# Bundled binaries (downloaded at build time, never committed)
+bin/
+*.exe
+*.zip
+*.7z
+
+# Media used while testing
+*.mp4
+*.webm
+*.m4a
+*.wav
+*.mov
+*.mkv
+
+# OS / editors
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
