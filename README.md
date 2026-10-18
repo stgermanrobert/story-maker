@@ -87,7 +87,13 @@ Everything is rendered by FFmpeg with a single `filter_complex`: the source is s
 
 ## Building the portable release
 
-Releases are built automatically by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)): publish a release on GitHub with a `vX.Y.Z` tag (it must match `APP_VERSION` in `story_maker.pyw`) and the workflow builds the portable zip on Windows with a pinned FFmpeg version, attaches it to the release with its SHA-256 checksum and fills in the notes from `CHANGELOG.md`.
+Releases are fully automatic ([`.github/workflows/release.yml`](.github/workflows/release.yml)). To ship a new version:
+
+1. Bump `APP_VERSION` in `story_maker.pyw`.
+2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`.
+3. Push to `main`.
+
+The workflow notices the new version, builds the portable zip on Windows with a pinned FFmpeg version, and publishes the `vX.Y.Z` release with the zip, its SHA-256 checksum and the changelog notes. Pushes that don't change the version do nothing; the build fails if the changelog entry is missing.
 
 ## License
 

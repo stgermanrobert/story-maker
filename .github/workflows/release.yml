@@ -1,9 +1,15 @@
 name: Build portable release
 
-# Se ejecuta al publicar una release en GitHub (Releases → Draft a new release → tag vX.Y.Z → Publish):
-# compila el zip portable, lo adjunta a esa release junto con su SHA-256 y completa las notas desde el CHANGELOG.
-# También se puede lanzar a mano desde la pestaña Actions (deja el zip como artifact).
+# Publicación automática:
+#   cada push a main que cambie story_maker.pyw o CHANGELOG.md mira APP_VERSION;
+#   si todavía no existe el tag vX.Y.Z, compila el zip portable en Windows y publica la
+#   release con ese tag, el zip, su SHA-256 y las notas tomadas del CHANGELOG.
+# También funciona si se publica una release a mano desde GitHub (adjunta el zip),
+# y a mano desde la pestaña Actions (deja el zip como artifact, sin publicar).
 on:
+  push:
+    branches: [main]
+    paths: ["story_maker.pyw", "CHANGELOG.md"]
   release:
     types: [published]
   workflow_dispatch:
@@ -11,28 +17,66 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   # Versión fija de FFmpeg para que cada build sea reproducible (se actualiza a mano).
   FFMPEG_VERSION: "9.0.2"
   PYTHON_VERSION: "3.12"
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      build: ${{ steps.plan.outputs.build }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Decide what to do
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          ver=$(sed -nE 's/^APP_VERSION = "([^"]+)".*/\1/p' story_maker.pyw)
+          [ -n "$ver" ] || { echo "::error::No encuentro APP_VERSION en story_maker.pyw"; exit 1; }
+          tag="v$ver"; build=false; publish=false
+          case "$EVENT" in
+            release)
+              [ "$REF_NAME" = "$tag" ] || { echo "::error::El tag $REF_NAME no coincide con APP_VERSION = $ver"; exit 1; }
+              build=true; publish=true ;;
+            push)
+              if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+                echo "El tag $tag ya existe: no hay versión nueva que publicar."
+              else
+                echo "Versión nueva: $tag"; build=true; publish=true
+              fi ;;
+            workflow_dispatch)
+              build=true ;;
+          esac
+          if [ "$publish" = true ] && ! grep -qE "^## \[$ver\]" CHANGELOG.md; then
+            echo "::error::Falta la sección '## [$ver]' en CHANGELOG.md"; exit 1
+          fi
+          { echo "version=$ver"; echo "tag=$tag"; echo "build=$build"; echo "publish=$publish"; } >> "$GITHUB_OUTPUT"
+
   build-windows:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
     runs-on: windows-latest
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      PUBLISH: ${{ needs.plan.outputs.publish }}
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v7
-
-      - name: Check that the tag matches APP_VERSION
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          $m = Select-String -Path story_maker.pyw -Pattern '^APP_VERSION = "([^"]+)"'
-          $app = $m.Matches[0].Groups[1].Value
-          if ($tag -ne $app) { Write-Error "El tag v$tag no coincide con APP_VERSION = $app en story_maker.pyw"; exit 1 }
-          Write-Host "Versión OK: $app"
 
       - uses: actions/setup-python@v7
         with:
@@ -77,7 +121,7 @@ jobs:
       - name: Zip and checksum
         id: zip
         run: |
-          $name = "StoryMaker-${{ github.ref_name }}-win64.zip" -replace '/', '-'
+          $name = "StoryMaker-$env:TAG-win64.zip"
           Compress-Archive -Path dist/StoryMaker -DestinationPath $name -CompressionLevel Optimal
           $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLower()
           "$hash  $name" | Set-Content SHA256SUMS.txt -Encoding ascii -NoNewline
@@ -92,29 +136,31 @@ jobs:
           Write-Host "SHA-256: $hash"
 
       - name: Release notes from CHANGELOG
-        if: startsWith(github.ref, 'refs/tags/')
+        if: env.PUBLISH == 'true'
         run: |
-          $ver = "${{ github.ref_name }}".TrimStart('v')
+          $ver = $env:TAG.TrimStart('v')
           $text = Get-Content CHANGELOG.md -Raw
           $m = [regex]::Match($text, "(?ms)^## \[$([regex]::Escape($ver))\][^\n]*\n(.*?)(?=^## \[|\z)")
           $body = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "Story Maker $ver" }
-          $body += "`n`n---`n**Download:** ``StoryMaker-${{ github.ref_name }}-win64.zip`` → unzip → run ``StoryMaker.exe``. FFmpeg $env:FFMPEG_VERSION and yt-dlp included."
+          $body += "`n`n---`n**Download:** ``StoryMaker-$env:TAG-win64.zip`` → unzip → run ``StoryMaker.exe``. FFmpeg $env:FFMPEG_VERSION and yt-dlp included."
           $body += "`n`nSHA-256: ``$((Get-Content SHA256SUMS.txt).Split(' ')[0])``"
           Set-Content notes.md $body -Encoding utf8
 
-      - name: Attach zip, checksum and notes to the release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish release (creates the tag if needed)
+        if: env.PUBLISH == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Story Maker ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Story Maker ${{ env.TAG }}
           body_path: notes.md
+          make_latest: true
           files: |
             ${{ steps.zip.outputs.name }}
             SHA256SUMS.txt
 
       - name: Upload artifact (manual runs)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: env.PUBLISH != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: StoryMaker-win64

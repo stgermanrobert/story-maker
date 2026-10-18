@@ -3,6 +3,10 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+### Changed
+- Releases are now published automatically: pushing a new `APP_VERSION` with its changelog entry builds and publishes the release (no manual step on GitHub).
+
 ## [1.0.5] - 2026-10-18
 ### Changed
 - Clean preview: the frame around the main video is hidden by default. Hovering shows a thin outline; clicking the video selects it (handles appear); clicking anywhere else or pressing `Esc` hides it again. The mouse wheel only scales the video when hovering or selected.
