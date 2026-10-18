@@ -1,10 +1,11 @@
 name: Build portable release
 
-# Se ejecuta al subir un tag de versión (git tag v1.0.3 && git push origin v1.0.3)
-# o a mano desde la pestaña Actions (en ese caso deja el zip como artifact, sin publicar release).
+# Se ejecuta al publicar una release en GitHub (Releases → Draft a new release → tag vX.Y.Z → Publish):
+# compila el zip portable, lo adjunta a esa release y completa las notas desde el CHANGELOG.
+# También se puede lanzar a mano desde la pestaña Actions (deja el zip como artifact).
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -81,10 +82,11 @@ jobs:
           $body += "`n`n---`n**Download:** ``StoryMaker-${{ github.ref_name }}-win64.zip`` → unzip → run ``StoryMaker.exe``. FFmpeg and yt-dlp included."
           Set-Content notes.md $body -Encoding utf8
 
-      - name: Publish release
+      - name: Attach zip and notes to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           name: Story Maker ${{ github.ref_name }}
           body_path: notes.md
           files: ${{ steps.zip.outputs.name }}

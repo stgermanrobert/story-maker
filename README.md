@@ -81,12 +81,7 @@ Everything is rendered by FFmpeg with a single `filter_complex`: the source is s
 
 ## Building the portable release
 
-Releases are built automatically by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) when a version tag is pushed:
-
-```powershell
-git tag v1.0.4
-git push origin v1.0.4
-```
+Releases are built automatically by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)): publish a release on GitHub with a `vX.Y.Z` tag and the workflow builds the portable zip on Windows, attaches it to the release and fills in the notes from `CHANGELOG.md`.
 
 ## License
 
