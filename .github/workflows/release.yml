@@ -58,7 +58,7 @@ jobs:
           }
           Write-Host "FFmpeg build: $($root.Name)"
 
-      - name: Bundle yt-dlp (latest on purpose: YouTube changes often)
+      - name: "Bundle yt-dlp (latest on purpose, YouTube changes often)"
         run: |
           Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile dist/StoryMaker/bin/yt-dlp.exe
           Invoke-WebRequest https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/LICENSE -OutFile dist/StoryMaker/licenses/yt-dlp-LICENSE.txt
